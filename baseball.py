@@ -364,12 +364,16 @@ def print_swing_outcomes():
     for i in range(len(swing_outcomes)):
         print(swing_outcomes[i] + ": " + formatAsPercent(swing_outcome_counts[i] / swing_count))
 
+
 def print_pa_outcomes(state: GameState):
     print("PA count: " + str(state.pa_count))
     for k, v in state.outcomes.items():
         print(str(k) + ": " + formatAsPercent(v / state.pa_count))
     hits = state.outcomes[PAOutcome.HR] + state.outcomes[PAOutcome.TRIPLE] + state.outcomes[PAOutcome.DOUBLE] + state.outcomes[PAOutcome.SINGLE]
-    print("Batting Avg.: " + formatAsPercent(hits / state.pa_count))
+    avg = hits / (state.pa_count - state.outcomes[PAOutcome.WALK])
+    obp = (hits + state.outcomes[PAOutcome.WALK]) / (state.pa_count)
+    print("Batting Avg.: " + formatAsPercent(avg))
+    print("On Base Percentage: " + formatAsPercent(obp))
 
 
 def sim_pa(state: GameState, pitch_func, swing_func):
@@ -395,8 +399,12 @@ def simulate(pitch_func, swing_func, pa_count):
     pitch_counts = []
     for i in range(pa_count):
         pitch_counts.append(sim_pa(state, pitch_func, swing_func))
-    print_swing_outcomes()
-    print_pa_outcomes(state)
+    # print_swing_outcomes()
+    # return print_pa_outcomes(state)
+    hits = state.outcomes[PAOutcome.HR] + state.outcomes[PAOutcome.TRIPLE] + state.outcomes[PAOutcome.DOUBLE] + state.outcomes[PAOutcome.SINGLE]
+    avg = hits / (state.pa_count - state.outcomes[PAOutcome.WALK])
+    obp = (hits + state.outcomes[PAOutcome.WALK]) / (state.pa_count)
+    return avg, obp
 
 
 def random_pitch(state: GameState):
@@ -428,7 +436,7 @@ r = list(range(117, 164)) + list(range(837, 884))
 def test1(state: GameState):
     return random.choice(r)
 
-def inside_only(state: GameState):
+def middle_only(state: GameState):
     r = list(range(391, 610))
     return random.choice(r)
 
@@ -445,6 +453,18 @@ def corners_only(state: GameState):
     return random.choice(r)
 
 if __name__ == "__main__":
-    simulate(corners_only, top_only, 200000)
-    print("Outside count: " + str(outside_count))
+    pitch_algos = [random_pitch, middle_only, edges_only, top_only, corners_only]
+    swing_algos = [top_only]
+    illegal = [(middle_only, top_only), (middle_only, corners_only), (edges_only, top_only), (edges_only, corners_only), (top_only, middle_only), (top_only, edges_only), (corners_only, middle_only), (corners_only, edges_only)]
+    for pitch_algo in pitch_algos:
+        for swing_algo in swing_algos:
+            if (pitch_algo, swing_algo) in illegal:
+                continue
+            print("Simulating " + str(pitch_algo.__name__) + " vs " + str(swing_algo.__name__))
+            avg, obp = simulate(pitch_algo, swing_algo, 200000)
+            avg = (avg * 1000) // 1
+            obp = (obp * 1000) // 1
+            print("Avg: " + str('{:.0f}'.format(avg)))
+            print("OBP: " + str('{:.0f}'.format(obp)))
+            print("\n")
         
