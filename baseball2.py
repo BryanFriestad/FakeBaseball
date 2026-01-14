@@ -79,10 +79,15 @@ def get_outcome(pitch, swing):
         return 11
     
     return outcome_table[outcome_table_position[1]][outcome_table_position[0]]
+
+class TeamStrategy():
+    def __init__(self, pitch_algo, swing_algo):
+        self.pitch_algo = pitch_algo
+        self.swing_algo = swing_algo
     
-def sim_pitch(pitch_algo, swing_algo):
-    pitch = pitch_algo()
-    swing = swing_algo()
+def sim_pitch(state: GameState, pitch_algo, swing_algo):
+    pitch = pitch_algo(state)
+    swing = swing_algo(state)
     return get_outcome(pitch, swing)
 
 def adapter_sim_pitch(state: GameState, pitch_algo, swing_algo):
@@ -90,7 +95,7 @@ def adapter_sim_pitch(state: GameState, pitch_algo, swing_algo):
     Adapter function that connects sim_pitch with GameState.
     Takes a GameState object and calls the appropriate method based on the outcome.
     """
-    outcome = sim_pitch(pitch_algo, swing_algo)
+    outcome = sim_pitch(state, pitch_algo, swing_algo)
     
     # Map numeric outcomes to GameState methods
     outcome_mapping = {
@@ -162,7 +167,7 @@ def sim_plate_appearance(state: GameState, pitch_algo, swing_algo, verbose=False
             
             return outcome_to_paoutcome[outcome]
 
-def sim_game(pitch_algo=None, swing_algo=None, verbose=False):
+def sim_game(strategyA: TeamStrategy, strategyB: TeamStrategy, aHome: bool = True, verbose=False):
     """
     Simulate a full game (9+ innings).
     Uses default algorithms if none provided.
@@ -170,10 +175,9 @@ def sim_game(pitch_algo=None, swing_algo=None, verbose=False):
     Continues to extra innings if tied after 9.
     Ends in a tie if still tied after 18 innings.
     """
-    if pitch_algo is None:
-        pitch_algo = lambda: random.randint(1, size)
-    if swing_algo is None:
-        swing_algo = swing
+
+    homeStrategy = strategyA if aHome else strategyB
+    awayStrategy = strategyB if aHome else strategyA
     
     state = GameState()
     
@@ -183,12 +187,13 @@ def sim_game(pitch_algo=None, swing_algo=None, verbose=False):
             print(f"Top of {state.inning}")
             print(f"Current score: {state.score}")
         while state.top:
-            sim_plate_appearance(state, pitch_algo, swing_algo, verbose)
+            sim_plate_appearance(state, homeStrategy.pitch_algo, awayStrategy.swing_algo, verbose)
+
         if verbose:
             print(f"Bottom of {state.inning}")
             print(f"Current score: {state.score}")
         while not state.top:
-            sim_plate_appearance(state, pitch_algo, swing_algo, verbose)
+            sim_plate_appearance(state, awayStrategy.pitch_algo, homeStrategy.swing_algo, verbose)
             if state.inning == 9 and state.score[1] > state.score[0]:
                 break
 
@@ -199,89 +204,115 @@ def sim_game(pitch_algo=None, swing_algo=None, verbose=False):
                 print(f"Top of {state.inning}")
                 print(f"Current score: {state.score}")
             while state.top:
-                sim_plate_appearance(state, pitch_algo, swing_algo, verbose)
+                sim_plate_appearance(state, homeStrategy.pitch_algo, awayStrategy.swing_algo, verbose)
+
             if verbose:
                 print(f"Bottom of {state.inning}")
                 print(f"Current score: {state.score}")
             while not state.top:
-                sim_plate_appearance(state, pitch_algo, swing_algo, verbose)
+                sim_plate_appearance(state, awayStrategy.pitch_algo, homeStrategy.swing_algo, verbose)
             if state.score[1] > state.score[0]:
                 break
         
     # Print game results
-    print(f"Plate appearances: {state.pa_count}")
-    print(f"Final score: {state.score}")
-    print(f"Innings played: {state.inning - 1}")
+    if verbose:
+        print(f"Plate appearances: {state.pa_count}")
+        print(f"Final score: {state.score}")
+        print(f"Innings played: {state.inning - 1}")
     
     return state
 
 
-def sim_games(num_games, pitch_algo=None, swing_algo=None):
+def sim_games(num_games, strategyA: TeamStrategy, strategyB: TeamStrategy):
     """
     Simulate multiple games and return average runs per team per game.
-    """
-    if pitch_algo is None:
-        pitch_algo = lambda: random.randint(1, size)
-    if swing_algo is None:
-        swing_algo = swing
-    
-    total_runs_team1 = 0
-    total_runs_team2 = 0
-    total_innings_team1 = 0
-    total_innings_team2 = 0
-    home_wins = 0
-    away_wins = 0
+    """    
+    total_runs_teamA = 0
+    total_runs_teamB = 0
+    a_wins = 0
+    b_wins = 0
     ties = 0
     
     for i in range(num_games):
-        state = sim_game(pitch_algo, swing_algo)
-        total_runs_team1 += state.score[0]
-        total_runs_team2 += state.score[1]
-        
-        # Track innings played for run normalization
-        innings_played = state.inning - 1
-        total_innings_team1 += innings_played
-        total_innings_team2 += innings_played
+        a_home = random.random() > 0.5
+        state = sim_game(strategyA, strategyB, a_home)
+        a_score = state.score[1] if a_home else state.score[0]
+        b_score = state.score[0] if a_home else state.score[1]
         
         # Track wins and ties
-        if state.score[0] > state.score[1]:
-            away_wins += 1
-        elif state.score[1] > state.score[0]:
-            home_wins += 1
+        if a_score > b_score:
+            a_wins += 1
+        elif b_score > a_score:
+            b_wins += 1
         else:
             ties += 1
+
+        total_runs_teamA += a_score
+        total_runs_teamB += b_score
         
-        # Print progress every 10 games
-        if (i + 1) % 10 == 0:
+        # Print progress every 100 games
+        if (i + 1) % 100 == 0:
             print(f"Completed {i + 1}/{num_games} games")
     
     # Calculate runs per 9 innings
-    avg_runs_team1_per_9 = (total_runs_team1 / total_innings_team1) * 9 if total_innings_team1 > 0 else 0
-    avg_runs_team2_per_9 = (total_runs_team2 / total_innings_team2) * 9 if total_innings_team2 > 0 else 0
+    # avg_runs_team1_per_9 = (total_runs_team1 / total_innings_team1) * 9 if total_innings_team1 > 0 else 0
+    # avg_runs_team2_per_9 = (total_runs_team2 / total_innings_team2) * 9 if total_innings_team2 > 0 else 0
     
     # Calculate win rates
-    home_win_rate = (home_wins / num_games) * 100
-    away_win_rate = (away_wins / num_games) * 100
+    a_win_rate = (a_wins / num_games) * 100
+    b_win_rate = (b_wins / num_games) * 100
     tie_rate = (ties / num_games) * 100
     
     print(f"\nResults after {num_games} games:")
-    print(f"Average runs per 9 innings - Team 1 (away): {avg_runs_team1_per_9:.2f}")
-    print(f"Average runs per 9 innings - Team 2 (home): {avg_runs_team2_per_9:.2f}")
-    print(f"Home team win rate: {home_win_rate:.1f}% ({home_wins}/{num_games})")
-    print(f"Away team win rate: {away_win_rate:.1f}% ({away_wins}/{num_games})")
+    # print(f"Average runs per 9 innings - Team 1 (away): {avg_runs_team1_per_9:.2f}")
+    # print(f"Average runs per 9 innings - Team 2 (home): {avg_runs_team2_per_9:.2f}")
+    print(f"Team A win rate: {a_win_rate:.1f}% ({a_wins}/{num_games})")
+    print(f"Team B win rate: {b_win_rate:.1f}% ({b_wins}/{num_games})")
     print(f"Tie rate: {tie_rate:.1f}% ({ties}/{num_games})")
-    
-    return avg_runs_team1_per_9, avg_runs_team2_per_9, home_win_rate, away_win_rate
-    
 
-def swing():
-    x = random.randint(14, 19)
-    y = random.randint(10, 23)
+
+def pa_stats(pitch_algo, swing_algo, sims = 10000):
+    counts = {outcome: 0 for outcome in PAOutcome}
+    for _ in range(sims):
+        counts[sim_plate_appearance(GameState(), pitch_algo=pitch_algo, swing_algo=swing_algo)] += 1
+    
+    for outcome, num in counts.items():
+        rate = 100 * (num / sims)
+        print(f'Outcome - {outcome} - {rate:.1f}%')
+
+swing_probabilities = [
+    [26.64, 46.62, 49.91],
+    [40.54, 53.27, 57.88],
+    [39.03, 59.10, 65.68],
+    [06.42, 54.72, 73.84]
+]
+
+def realistic_take_swing(state: GameState):
+    prob = swing_probabilities[state.balls][state.strikes] / 100
+    if random.random() < prob:
+        return swing(state)
+    return -1
+    
+def swing(state: GameState):
+    x = random.randint(9, 25)
+    y = random.randint(5, 28)
     return position_to_index((x, y))
 
-def player_swing():
+def smart_pitch(state: GameState):
+    outside_picks = [1, 2, 33, 34, 16, 17, 48, 49, 31, 31, 63, 64, 481, 482, 513, 514, 511, 512, 543, 544, 961, 962, 993, 994, 976, 977, 1008, 1009, 991, 992, 1023, 1024]
+    inside_picks = [137, 152, 873, 888, 489, 504]
+    return random.choice(outside_picks + inside_picks)
+
+def player_swing(state: GameState):
     x = input("Swing number?: ")
     return int(x)
 
 if __name__ == "__main__":
-    sim_game(pitch_algo=lambda: random.randint(1, size), swing_algo=player_swing, verbose=True)
+    # sim_game(pitch_algo=lambda: random.randint(1, size), swing_algo=swing, verbose=True)
+    # sim_plate_appearance(GameState(), pitch_algo=lambda: random.randint(1, size), swing_algo=swing, verbose=True)
+    # pa_stats(pitch_algo=smart_pitch, swing_algo=realistic_take_swing)
+
+    # Compare gameplay strategies
+    a_strategy = TeamStrategy(lambda state: random.randint(1, 1024), swing)
+    b_strategy = TeamStrategy(lambda state: random.randint(1, 1024), realistic_take_swing)
+    sim_games(16000, a_strategy, b_strategy)
