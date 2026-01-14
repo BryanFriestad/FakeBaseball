@@ -31,6 +31,14 @@ def parse_zone_csv(csv_path):
                 zone_table.append([int(value) for value in row])
     return zone_table
 
+def save_as_csv(table, csv_path, header = None):
+    """Save a table (list of lists) to a CSV file."""
+    with open(csv_path, 'w', newline='') as file:
+        writer = csv.writer(file)
+        if header: writer.writerow(header)
+        for row in table:
+            writer.writerow(row)
+
 # Parse the CSV files and use them
 outcome_table = parse_outcomes_csv("FakeBaseball 2/outcomes.csv")
 assert len(outcome_table) % 2 == 1 and len(outcome_table[0]) % 2 == 1
@@ -253,16 +261,16 @@ def sim_games(num_games, strategyA: TeamStrategy, strategyB: TeamStrategy):
         # Print progress every 100 games
         if (i + 1) % 100 == 0:
             print(f"Completed {i + 1}/{num_games} games")
-    
+
     # Calculate runs per 9 innings
     # avg_runs_team1_per_9 = (total_runs_team1 / total_innings_team1) * 9 if total_innings_team1 > 0 else 0
     # avg_runs_team2_per_9 = (total_runs_team2 / total_innings_team2) * 9 if total_innings_team2 > 0 else 0
-    
+
     # Calculate win rates
     a_win_rate = (a_wins / num_games) * 100
     b_win_rate = (b_wins / num_games) * 100
     tie_rate = (ties / num_games) * 100
-    
+
     print(f"\nResults after {num_games} games:")
     # print(f"Average runs per 9 innings - Team 1 (away): {avg_runs_team1_per_9:.2f}")
     # print(f"Average runs per 9 innings - Team 2 (home): {avg_runs_team2_per_9:.2f}")
@@ -294,7 +302,7 @@ def realistic_take_swing(state: GameState):
     return -1
     
 def swing(state: GameState):
-    x = random.randint(9, 25)
+    x = random.randint(9, 24)
     y = random.randint(5, 28)
     return position_to_index((x, y))
 
@@ -303,16 +311,55 @@ def smart_pitch(state: GameState):
     inside_picks = [137, 152, 873, 888, 489, 504]
     return random.choice(outside_picks + inside_picks)
 
+def rings(state: GameState):
+    outer_ring = [x for x in range(1, 33)] + [x for x in range(993, 1025)] + [x for x in range(33, 962, 32)] + [x for x in range(64, 993, 32)]
+    inner_ring = [x for x in range(137, 153)] + [x for x in range(873, 889)] + [x for x in range(169, 842, 32)] + [x for x in range(184, 857, 32)]
+    return random.choice(outer_ring + inner_ring)
+
 def player_swing(state: GameState):
     x = input("Swing number?: ")
     return int(x)
+
+def middle_swings(state: GameState):
+    return random.choice([752, 720, 688, 656, 624, 592, 560, 528, 496, 464, 432, 400, 368, 336, 304, 272])
 
 if __name__ == "__main__":
     # sim_game(pitch_algo=lambda: random.randint(1, size), swing_algo=swing, verbose=True)
     # sim_plate_appearance(GameState(), pitch_algo=lambda: random.randint(1, size), swing_algo=swing, verbose=True)
     # pa_stats(pitch_algo=smart_pitch, swing_algo=realistic_take_swing)
 
-    # Compare gameplay strategies
-    a_strategy = TeamStrategy(lambda state: random.randint(1, 1024), swing)
-    b_strategy = TeamStrategy(lambda state: random.randint(1, 1024), realistic_take_swing)
-    sim_games(16000, a_strategy, b_strategy)
+    # # Compare gameplay strategies
+    # a_strategy = TeamStrategy(lambda state: random.randint(1, 1024), realistic_take_swing)
+    # b_strategy = TeamStrategy(rings, swing)
+    # sim_games(16000, a_strategy, b_strategy)
+
+    # count outcome table rates
+    pitch_algo = rings
+    swing_algo = middle_swings
+    outcome_table_counts = [[0 for _ in range(len(outcome_table[0]))] for _ in range(len(outcome_table))]
+    whiff_count = 0
+    num_swings = 10000000
+    for x in range(num_swings):
+        if x % (num_swings // 10) == 0:
+            print(f'Progress - {x*100 // num_swings}%')
+
+        pitch = pitch_algo(None)
+        swing = swing_algo(None)
+
+        if swing == -1:
+            x -= 1
+        
+        pitch_x, pitch_y = index_to_position(pitch)
+        swing_x, swing_y = index_to_position(swing)
+        
+        outcome_table_position = (pitch_x - swing_x + outcome_table_center[0], pitch_y - swing_y + outcome_table_center[1])
+
+        if outcome_table_position[0] < 0 or outcome_table_position[0] >= len(outcome_table[0]) or outcome_table_position[1] < 0 or outcome_table_position[1] >= len(outcome_table):
+            whiff_count += 1
+            continue
+        
+        outcome_table_counts[outcome_table_position[1]][outcome_table_position[0]] += 1
+
+    outcome_table_rates = [[(count / num_swings) for count in row] for row in outcome_table_counts]
+    save_as_csv(outcome_table_rates, "FakeBaseball 2/rings_vs_middle_swings_outcome_table_rates.csv")
+
