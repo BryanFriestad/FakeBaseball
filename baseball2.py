@@ -1,35 +1,9 @@
 import random
 import csv
 from game_state import GameState, PAOutcome
+from PitchOutcomes import PitchOutcome, OutcomeTable, parse_outcomes_csv
+from Zone import Zone, parse_zone_csv
 
-x_size = 32
-y_size = 32
-size = x_size * y_size
-
-outcomes = {1: "homerun", 2: "triple", 3: "double", 4: "single", 5: "foul", 6: "sacfly", 7: "popout", 8: "groundball", 9: "fielderschoice", 10: "doubleplay", 11: "strike", 12: "ball"}
-outcome_counts = {outcome: 0 for outcome in outcomes}
-
-def parse_outcomes_csv(csv_path):
-    """Parse outcomes.csv into the outcomes_table."""
-    outcomes_table = []
-    with open(csv_path, 'r') as file:
-        reader = csv.reader(file)
-        for row in reader:
-            if row:  # Skip empty rows
-                # Convert each value to integer
-                outcomes_table.append([int(value) for value in row])
-    return outcomes_table
-
-def parse_zone_csv(csv_path):
-    """Parse zone.csv into a zone table where 1 = inside zone, 0 = outside zone."""
-    zone_table = []
-    with open(csv_path, 'r') as file:
-        reader = csv.reader(file)
-        for row in reader:
-            if row:  # Skip empty rows
-                # Convert each value to integer
-                zone_table.append([int(value) for value in row])
-    return zone_table
 
 def save_as_csv(table, csv_path, header = None):
     """Save a table (list of lists) to a CSV file."""
@@ -39,96 +13,49 @@ def save_as_csv(table, csv_path, header = None):
         for row in table:
             writer.writerow(row)
 
-# Parse the CSV files and use them
-outcome_table = parse_outcomes_csv("FakeBaseball 2/outcomes.csv")
-assert len(outcome_table) % 2 == 1 and len(outcome_table[0]) % 2 == 1
-outcome_table_center = (len(outcome_table[0]) // 2, len(outcome_table) // 2)
-
-zone_table = parse_zone_csv("FakeBaseball 2/zone.csv")
-assert len(zone_table) == x_size and len(zone_table[0]) == y_size
-
-def index_to_position(index):
-    assert index > 0 and index <= size
-    x = ((index - 1) % x_size) + 1
-    y = ((index - 1) // x_size) + 1
-    return x, y
-
-def position_to_index(position):
-    x, y = position
-    return (y-1)*x_size + (x)
-
-def is_outside(index):
-    """Check if the given index is outside the zone using zone_table."""
-    x, y = index_to_position(index)
-    # Convert to 0-based indices for the zone table
-    zone_x = x - 1
-    zone_y = y - 1
-    
-    # Check bounds
-    assert zone_x >= 0 and zone_x < len(zone_table[0]) and zone_y >= 0 and zone_y < len(zone_table), f"Invalid zone indices: {zone_x}, {zone_y}"
-    
-    # Return True if zone value is 0 (outside), False if 1 (inside)
-    return zone_table[zone_y][zone_x] == 0
-
-def get_outcome(pitch, swing):
-    # Handle taken pitch (swing == -1)
-    if swing == -1:
-        if is_outside(pitch):
-            return 12  # ball
-        else:
-            return 11  # strike
-    
-    pitch_x, pitch_y = index_to_position(pitch)
-    swing_x, swing_y = index_to_position(swing)
-    
-    outcome_table_position = (pitch_x - swing_x + outcome_table_center[0], pitch_y - swing_y + outcome_table_center[1])
-    
-    if outcome_table_position[0] < 0 or outcome_table_position[0] >= len(outcome_table[0]) or outcome_table_position[1] < 0 or outcome_table_position[1] >= len(outcome_table):
-        return 11
-    
-    return outcome_table[outcome_table_position[1]][outcome_table_position[0]]
 
 class TeamStrategy():
     def __init__(self, pitch_algo, swing_algo):
         self.pitch_algo = pitch_algo
         self.swing_algo = swing_algo
-    
-def sim_pitch(state: GameState, pitch_algo, swing_algo):
-    pitch = pitch_algo(state)
-    swing = swing_algo(state)
-    return get_outcome(pitch, swing)
 
-def adapter_sim_pitch(state: GameState, pitch_algo, swing_algo):
-    """
-    Adapter function that connects sim_pitch with GameState.
-    Takes a GameState object and calls the appropriate method based on the outcome.
-    """
-    outcome = sim_pitch(state, pitch_algo, swing_algo)
-    
-    # Map numeric outcomes to GameState methods
-    outcome_mapping = {
-        1: state.home_run,
-        2: state.triple,
-        3: state.double,
-        4: state.single,
-        5: state.foul,
-        6: state.sac_fly,
-        7: state.pop_out,
-        8: state.ground_ball,
-        9: state.fielders_choice,
-        10: state.double_play,
-        11: state.strike,
-        12: state.ball  # taken pitch outside = ball
-    }
-    
-    if outcome in outcome_mapping:
-        outcome_mapping[outcome]()
-    else:
-        raise ValueError(f"Unknown outcome: {outcome}")
-    
-    return outcome
 
-def sim_plate_appearance(state: GameState, pitch_algo, swing_algo, verbose=False):
+class Baseball2PitchAdapter():
+
+    def __init__(self, zone, outcome_table):
+        self.zone = zone
+        self.outcome_table = outcome_table
+
+    def sim_pitch(self, state: GameState, pitch_algo, swing_algo) -> PitchOutcome:
+        pitch = pitch_algo(state)
+        swing = swing_algo(state)
+        outcome = self.outcome_table.get_outcome(self.zone, pitch, swing)
+    
+        # Map numeric outcomes to GameState methods
+        outcome_mapping = {
+            PitchOutcome.HR: state.home_run,
+            PitchOutcome.TRIPLE: state.triple,
+            PitchOutcome.DOUBLE: state.double,
+            PitchOutcome.SINGLE: state.single,
+            PitchOutcome.FOUL: state.foul,
+            PitchOutcome.SF: state.sac_fly,
+            PitchOutcome.PO: state.pop_out,
+            PitchOutcome.GB: state.ground_ball,
+            PitchOutcome.FC: state.fielders_choice,
+            PitchOutcome.DP: state.double_play,
+            PitchOutcome.STRIKE: state.strike,
+            PitchOutcome.BALL: state.ball
+        }
+        
+        if outcome in outcome_mapping:
+            outcome_mapping[outcome]()
+        else:
+            raise ValueError(f"Unknown outcome: {outcome}")
+        
+        return outcome
+
+
+def sim_plate_appearance(sim_pitch_func, state: GameState, pitch_algo, swing_algo, verbose=False):
     """
     Simulate a complete plate appearance (multiple pitches until it ends).
     Returns the PAOutcome of the plate appearance.
@@ -140,9 +67,7 @@ def sim_plate_appearance(state: GameState, pitch_algo, swing_algo, verbose=False
         initial_balls = state.balls
         initial_strikes = state.strikes
         
-        outcome = adapter_sim_pitch(state, pitch_algo, swing_algo)
-        if verbose:
-            print(f"Outcome: {outcomes[outcome]}")
+        outcome = sim_pitch_func(state, pitch_algo, swing_algo)
         
         # Check if plate appearance ended:
         # - PA count increased (means at-bat completed with hit/out)
@@ -150,24 +75,24 @@ def sim_plate_appearance(state: GameState, pitch_algo, swing_algo, verbose=False
         # - Balls reset to 0 (means walk occurred)
         # - Strikes reset to 0 (means strikeout occurred)
         # AND it wasn't a foul ball
-        if outcome != 5 and (state.pa_count > initial_pa_count or 
+        if outcome != PitchOutcome.FOUL and (state.pa_count > initial_pa_count or 
                             state.outs > initial_outs or
                             (state.balls < initial_balls) or
                             (state.strikes < initial_strikes)):
             
             # Map numeric outcomes to PAOutcome enum
             outcome_to_paoutcome = {
-                1: PAOutcome.HR,
-                2: PAOutcome.TRIPLE,
-                3: PAOutcome.DOUBLE,
-                4: PAOutcome.SINGLE,
-                6: PAOutcome.SF,
-                7: PAOutcome.PO,
-                8: PAOutcome.GB,
-                9: PAOutcome.FC,
-                10: PAOutcome.DP,
-                11: PAOutcome.STRIKEOUT,
-                12: PAOutcome.WALK
+                PitchOutcome.HR: PAOutcome.HR,
+                PitchOutcome.TRIPLE: PAOutcome.TRIPLE,
+                PitchOutcome.DOUBLE: PAOutcome.DOUBLE,
+                PitchOutcome.SINGLE: PAOutcome.SINGLE,
+                PitchOutcome.SF: PAOutcome.SF,
+                PitchOutcome.PO: PAOutcome.PO,
+                PitchOutcome.GB: PAOutcome.GB,
+                PitchOutcome.FC: PAOutcome.FC,
+                PitchOutcome.DP: PAOutcome.DP,
+                PitchOutcome.STRIKE: PAOutcome.STRIKEOUT,
+                PitchOutcome.BALL: PAOutcome.WALK
             }
 
             if verbose:
@@ -175,7 +100,7 @@ def sim_plate_appearance(state: GameState, pitch_algo, swing_algo, verbose=False
             
             return outcome_to_paoutcome[outcome]
 
-def sim_game(strategyA: TeamStrategy, strategyB: TeamStrategy, aHome: bool = True, verbose=False):
+def sim_game(sim_pitch_func, strategyA: TeamStrategy, strategyB: TeamStrategy, aHome: bool = True, verbose=False):
     """
     Simulate a full game (9+ innings).
     Uses default algorithms if none provided.
@@ -195,13 +120,13 @@ def sim_game(strategyA: TeamStrategy, strategyB: TeamStrategy, aHome: bool = Tru
             print(f"Top of {state.inning}")
             print(f"Current score: {state.score}")
         while state.top:
-            sim_plate_appearance(state, homeStrategy.pitch_algo, awayStrategy.swing_algo, verbose)
+            sim_plate_appearance(sim_pitch_func, state, homeStrategy.pitch_algo, awayStrategy.swing_algo, verbose)
 
         if verbose:
             print(f"Bottom of {state.inning}")
             print(f"Current score: {state.score}")
         while not state.top:
-            sim_plate_appearance(state, awayStrategy.pitch_algo, homeStrategy.swing_algo, verbose)
+            sim_plate_appearance(sim_pitch_func, state, awayStrategy.pitch_algo, homeStrategy.swing_algo, verbose)
             if state.inning == 9 and state.score[1] > state.score[0]:
                 break
 
@@ -212,13 +137,13 @@ def sim_game(strategyA: TeamStrategy, strategyB: TeamStrategy, aHome: bool = Tru
                 print(f"Top of {state.inning}")
                 print(f"Current score: {state.score}")
             while state.top:
-                sim_plate_appearance(state, homeStrategy.pitch_algo, awayStrategy.swing_algo, verbose)
+                sim_plate_appearance(sim_pitch_func, state, homeStrategy.pitch_algo, awayStrategy.swing_algo, verbose)
 
             if verbose:
                 print(f"Bottom of {state.inning}")
                 print(f"Current score: {state.score}")
             while not state.top:
-                sim_plate_appearance(state, awayStrategy.pitch_algo, homeStrategy.swing_algo, verbose)
+                sim_plate_appearance(sim_pitch_func, state, awayStrategy.pitch_algo, homeStrategy.swing_algo, verbose)
             if state.score[1] > state.score[0]:
                 break
         
@@ -279,10 +204,10 @@ def sim_games(num_games, strategyA: TeamStrategy, strategyB: TeamStrategy):
     print(f"Tie rate: {tie_rate:.1f}% ({ties}/{num_games})")
 
 
-def pa_stats(pitch_algo, swing_algo, sims = 10000):
+def pa_stats(sim_pitch_func, pitch_algo, swing_algo, sims = 10000):
     counts = {outcome: 0 for outcome in PAOutcome}
     for _ in range(sims):
-        counts[sim_plate_appearance(GameState(), pitch_algo=pitch_algo, swing_algo=swing_algo)] += 1
+        counts[sim_plate_appearance(sim_pitch_func, GameState(), pitch_algo=pitch_algo, swing_algo=swing_algo)] += 1
     
     for outcome, num in counts.items():
         rate = 100 * (num / sims)
@@ -304,7 +229,7 @@ def realistic_take_swing(state: GameState):
 def swing(state: GameState):
     x = random.randint(9, 24)
     y = random.randint(5, 28)
-    return position_to_index((x, y))
+    return x + ((y-1)*32)
 
 def smart_pitch(state: GameState):
     outside_picks = [1, 2, 33, 34, 16, 17, 48, 49, 31, 31, 63, 64, 481, 482, 513, 514, 511, 512, 543, 544, 961, 962, 993, 994, 976, 977, 1008, 1009, 991, 992, 1023, 1024]
@@ -357,7 +282,11 @@ def count_outcome_table_rates():
 if __name__ == "__main__":
     # sim_game(pitch_algo=lambda: random.randint(1, size), swing_algo=swing, verbose=True)
     # sim_plate_appearance(GameState(), pitch_algo=lambda: random.randint(1, size), swing_algo=swing, verbose=True)
-    pa_stats(pitch_algo=rings, swing_algo=realistic_take_swing, sims=200000)
+
+    zone = Zone(parse_zone_csv("FakeBaseball 2/zone.csv"))
+    outcome_table = OutcomeTable(parse_outcomes_csv("FakeBaseball 2/outcomes.csv"))
+    adapter = Baseball2PitchAdapter(zone, outcome_table)
+    pa_stats(adapter.sim_pitch, pitch_algo=rings, swing_algo=middle_swings, sims=200000)
 
     # # Compare gameplay strategies
     # a_strategy = TeamStrategy(lambda state: random.randint(1, 1024), realistic_take_swing)
