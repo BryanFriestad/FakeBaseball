@@ -323,16 +323,7 @@ def player_swing(state: GameState):
 def middle_swings(state: GameState):
     return random.choice([752, 720, 688, 656, 624, 592, 560, 528, 496, 464, 432, 400, 368, 336, 304, 272])
 
-if __name__ == "__main__":
-    # sim_game(pitch_algo=lambda: random.randint(1, size), swing_algo=swing, verbose=True)
-    # sim_plate_appearance(GameState(), pitch_algo=lambda: random.randint(1, size), swing_algo=swing, verbose=True)
-    # pa_stats(pitch_algo=smart_pitch, swing_algo=realistic_take_swing)
-
-    # # Compare gameplay strategies
-    # a_strategy = TeamStrategy(lambda state: random.randint(1, 1024), realistic_take_swing)
-    # b_strategy = TeamStrategy(rings, swing)
-    # sim_games(16000, a_strategy, b_strategy)
-
+def count_outcome_table_rates():
     # count outcome table rates
     pitch_algo = rings
     swing_algo = middle_swings
@@ -362,4 +353,16 @@ if __name__ == "__main__":
 
     outcome_table_rates = [[(count / num_swings) for count in row] for row in outcome_table_counts]
     save_as_csv(outcome_table_rates, "FakeBaseball 2/rings_vs_middle_swings_outcome_table_rates.csv")
+
+if __name__ == "__main__":
+    # sim_game(pitch_algo=lambda: random.randint(1, size), swing_algo=swing, verbose=True)
+    # sim_plate_appearance(GameState(), pitch_algo=lambda: random.randint(1, size), swing_algo=swing, verbose=True)
+    pa_stats(pitch_algo=rings, swing_algo=realistic_take_swing, sims=200000)
+
+    # # Compare gameplay strategies
+    # a_strategy = TeamStrategy(lambda state: random.randint(1, 1024), realistic_take_swing)
+    # b_strategy = TeamStrategy(rings, swing)
+    # sim_games(16000, a_strategy, b_strategy)
+
+    # count_outcome_table_rates()
 
